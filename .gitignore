@@ -1,6 +1,9 @@
 node_modules
 .env
 
+paul
+paul.pub
+
 # Hardhat files
 /cache
 /artifacts

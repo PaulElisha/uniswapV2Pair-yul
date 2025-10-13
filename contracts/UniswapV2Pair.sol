@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: SEE LICENSE IN LICENSE
 pragma solidity ^0.8.0;
 
-contract UniswapV2Pair {
+import "./UniswapV2ERC20.sol";
+
+contract UniswapV2Pair is UniswapV2ERC20 {
     uint public constant MINIMUM_LIQUIDITY = 10 ** 3;
     bytes4 private constant SELECTOR =
         bytes4(keccak256(bytes("transfer(address,uint256)")));
@@ -113,30 +115,69 @@ contract UniswapV2Pair {
     function mint(address to) external lock returns (uint liquidity) {
         (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
 
-        uint _balance0 = getBalance(token0);
-        uint _balance1 = getBalance(token1);
+        address _token0 = token0;
+        address _token1 = token1;
+
+        uint _balance0 = getBalance(_token0);
+        uint _balance1 = getBalance(_token1);
+
+        bool feeOn;
 
         assembly {
             let amount0 := sub(_balance0, _reserve0)
             let amount1 := sub(_balance1, _reserve1)
+            let _kLast := sload(kLast.slot)
 
-            if or(iszero(amount0), iszero(amount1)) {
-                mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
-                revert(0x00, 0x20)
+            let fmptr := mload(0x40)
+            mstore(fmptr, 0xf65d5f86)
+            mstore(add(fmptr, 0x20), _reserve0)
+            mstore(add(fmptr, 0x40), _reserve1)
+            mstore(0x40, add(fmptr, 0x60))
+
+            feeOn := call(
+                gas(),
+                address(),
+                0,
+                add(fmptr, 28),
+                mload(0x40),
+                0x00,
+                0x20
+            )
+
+            if iszero(feeOn) {
+                leave
             }
 
-            let _totalSupply := sload(kLast.slot)
+            let _totalSupply := sload(totalSupply.slot)
 
             switch _totalSupply
             case 0 {
-                liquidity := (sqrt(mul(amount0, amount1)), MINIMUM_LIQUIDITY)
+                liquidity := sub(sqrt(mul(amount0, amount1)), MINIMUM_LIQUIDITY)
 
                 if iszero(gt(liquidity, 0)) {
                     mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
                     revert(0x00, 0x20)
                 }
 
-                sstore(kLast.slot, add(_totalSupply, MINIMUM_LIQUIDITY))
+                let fmptr := mload(0x40)
+                mstore(fmptr, 0x40c10f19)
+                mstore(add(fmptr, 0x20), 0x00)
+                mstore(add(fmptr, 0x40), MINIMUM_LIQUIDITY)
+                mstore(0x40, add(fmptr, 0x60))
+
+                let success := call(
+                    gas(),
+                    address(),
+                    0,
+                    add(fmptr, 28),
+                    0x40,
+                    0x00,
+                    0x20
+                )
+
+                if iszero(success) {
+                    revert(0, 0)
+                }
             }
             default {
                 liquidity := min(
@@ -148,11 +189,9 @@ contract UniswapV2Pair {
                     mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
                     revert(0x00, 0x20)
                 }
-            }
-
-            {
+    
                 let ptr := mload(0x40)
-                mstore(ptr, SELECTOR)
+                mstore(ptr, 0x40c10f19)
                 mstore(add(ptr, 0x20), to)
                 mstore(add(ptr, 0x40), liquidity)
                 mstore(0x40, add(ptr, 0x60))
@@ -170,7 +209,203 @@ contract UniswapV2Pair {
                 if iszero(success) {
                     revert(0, 0)
                 }
+
+                if iszero(feeOn) {
+                    leave
+                }
+                _kLast := mul(_reserve0, _reserve1)
             }
         }
     }
+
+    function _mintFee(uint112 _reserve0, uint112 _reserve1) private returns (bool feeOn) {
+        
+        assembly {
+            let _factory := sload(factory.slot)
+            let _kLast := sload(kLast.slot)
+
+            mstore(0x00, 0x017e7e58)
+            let success := call{
+                gas(),
+                _factory,
+                0,
+                28,
+                32,
+                0x00,
+                0x20
+            }
+
+            if iszero(success) {
+                revert(0, 0)
+            }
+
+            let feeTo := mload(0x00)
+
+            {
+                feeOn := iszero(iszero(feeTo))
+
+                if iszero(feeOn) {
+                    leave
+                }
+
+                                    if iszero(iszero(_kLast)) {
+                        let rootK := sqrt(mul(_reserve0, _reserve1))
+                        let rootKLast := sqrt(_kLast)
+
+                        if iszero(gt(rootK, rootKLast)) {
+                            leave
+                        }
+
+                        let _totalSupply := sload(totalSupply.slot)
+                        let numerator := mul(_totalSupply, sub(rootK, rootKLast))
+                        let denominator := add(mul(rootK, 5), rootKLast)
+                        let liquidity := div(numerator, denominator)
+
+                        if iszero(gt(liquidity, 0)) {
+                            leave
+                        }
+
+                                                    let fmptr := mload(0x40)
+                            mstore(fmptr, 0x40c10f19)
+                            mstore(add(fmptr, 0x20), feeTo)
+                            mstore(add(fmptr, 0x40), liquidity)
+                            mstore(0x40, add(fmptr, 0x60))
+
+                            let success := call(
+                                gas(),
+                                address(),
+                                0,
+                                add(fmptr, 28),
+                                mload(0x40),
+                                0x00,
+                                0x20
+                            )
+
+                            if iszero(success) {
+                                revert(0, 0)
+                            }
+                    }
+
+                if iszero(iszero(_kLast)) {
+                    _kLast := 0
+                }
+            }
+        }
+    }
+
+    function burn(address to) external lock returns (uint amount0, uint amount1) {
+        (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
+
+        address _token0 = token0;
+        address _token1 = token1;
+
+        uint _balance0 = getBalance(_token0);
+        uint _balance1 = getBalance(_token1);
+
+        assembly {
+            let _kLast := sload(kLast.slot)
+            
+            let fmptr := mload(0x40)
+            mstore(fmptr, 0xf65d5f86)
+            mstore(add(fmptr, 0x20), _reserve0)
+            mstore(add(fmptr, 0x40), _reserve1)
+            mstore(0x40, add(fmptr, 0x60))
+
+            let feeOn := call(
+                gas(),
+                address(),
+                0,
+                add(fmptr, 28),
+                mload(0x40),
+                0x00,
+                0x20
+            )
+
+            let _totalSupply := sload(totalSupply.slot)
+
+            let liquidity := sload(balanceOf.slot)
+            liquidity := and(
+                shr(mul(balanceOf.offset, 8), liquidity),
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            )
+
+            amount0 := div(mul(liquidity, _balance0), _totalSupply)
+            amount1 := div(mul(liquidity, _balance1), _totalSupply)
+
+            if iszero(gt(amount0, 0)) {
+                mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
+                revert(0x00, 0x20)
+            }
+
+            if iszero(gt(amount1, 0)) {
+                mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
+                revert(0x00, 0x20)
+            }
+
+            let ptr := mload(0x40)
+            mstore(ptr, 0x6161eb18)
+            mstore(add(ptr, 0x20), address())
+            mstore(add(ptr, 0x40), liquidity)
+            mstore(0x40, add(ptr, 0x60))
+
+            let success := call(
+                gas(),
+                address(),
+                0,
+                add(ptr, 28),
+                mload(0x40),
+                0
+            )
+
+            if iszero(success) {
+                revert(0, 0)
+            }
+
+            let fmptr := mload(0x40)
+            mstore(fmptr, 0xa9059cbb)
+            mstore(add(fmptr, 0x20), to)
+            mstore(add(fmptr, 0x40), amount0)
+            mstore(0x40, add(fmptr, 0x60))
+
+            let success := call(
+                gas(),
+                _token0,
+                0,
+                add(fmptr, 28),
+                mload(0x40),
+                0x00,
+                0x20
+            )
+
+            if iszero(success) {
+                revert(0, 0)
+            }
+
+            let fmptr := mload(0x40)
+            mstore(fmptr, 0xa9059cbb)
+            mstore(add(fmptr, 0x20), to)
+            mstore(add(fmptr, 0x40), amount1)
+            mstore(0x40, add(fmpfmptrtr1, 0x60))
+
+            let success1 := call(
+                gas(),
+                _token1,
+                0,
+                add(fmptr, 28),
+                mload(0x40),
+                0x00,
+                0x20
+            )
+
+            if iszero(success1) {
+                revert(0, 0)
+            }
+
+            if iszero(feeOn) {
+                leave
+            }
+            let _kLast := mul(_reserve0, _reserve1)
+        }
+    }
+    
 }

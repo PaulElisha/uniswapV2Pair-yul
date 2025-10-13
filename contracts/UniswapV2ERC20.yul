@@ -1,23 +1,19 @@
-object "Token" {
+object "UniswapV2ERC20" {
     code {
-        // Store the creator in slot zero.
         sstore(0, caller())
 
-        // Deploy the contract
         datacopy(0, dataoffset("runtime"), datasize("runtime"))
         return(0, datasize("runtime"))
     }
     object "runtime" {
         code {
-            // Protection against sending Ether
             require(iszero(callvalue()))
 
-            // Dispatcher
             switch selector()
             case 0x70a08231 /* "balanceOf(address)" */ {
                 returnUint(balanceOf(decodeAsAddress(0)))
             }
-            case 0x18160ddd /* "totalSupply()" */ {
+            case 0x18160ddd {
                 returnUint(totalSupply())
             }
             case 0xa9059cbb /* "transfer(address,uint256)" */ {
@@ -70,8 +66,6 @@ object "Token" {
                 emitTransfer(from, to, amount)
             }
 
-
-            /* ---------- calldata decoding functions ----------- */
             function selector() -> s {
                 s := div(calldataload(0), 0x100000000000000000000000000000000000000000000000000000000)
             }
@@ -89,7 +83,7 @@ object "Token" {
                 }
                 v := calldataload(pos)
             }
-            /* ---------- calldata encoding functions ---------- */
+
             function returnUint(v) {
                 mstore(0, v)
                 return(0, 0x20)
@@ -98,7 +92,6 @@ object "Token" {
                 returnUint(1)
             }
 
-            /* -------- events ---------- */
             function emitTransfer(from, to, amount) {
                 let signatureHash := 0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef
                 emitEvent(signatureHash, from, to, amount)
@@ -112,7 +105,6 @@ object "Token" {
                 log3(0, 0x20, signatureHash, indexed1, indexed2)
             }
 
-            /* -------- storage layout ---------- */
             function ownerPos() -> p { p := 0 }
             function totalSupplyPos() -> p { p := 1 }
             function accountToStorageOffset(account) -> offset {
@@ -125,7 +117,6 @@ object "Token" {
                 offset := keccak256(0, 0x40)
             }
 
-            /* -------- storage access ---------- */
             function owner() -> o {
                 o := sload(ownerPos())
             }
@@ -161,7 +152,6 @@ object "Token" {
                 sstore(offset, sub(currentAllowance, amount))
             }
 
-            /* ---------- utility functions ---------- */
             function lte(a, b) -> r {
                 r := iszero(gt(a, b))
             }
