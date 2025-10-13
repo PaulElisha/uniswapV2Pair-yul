@@ -363,7 +363,6 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 0x20
             )
 
-
             let liquidity := sload(balanceOf.slot)
             liquidity := and(
                 shr(mul(balanceOf.offset, 8), liquidity),
@@ -504,4 +503,5 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             }
         }
     }
+}
 }
