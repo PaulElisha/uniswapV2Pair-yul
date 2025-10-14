@@ -55,18 +55,15 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         )
     {
         assembly {
-            blockTimestampLast_offset := blockTimestampLast.offset
-            reserve1_offset := reserve1.offset
-
             let val := sload(reserve0.slot)
 
             _reserve0 := and(val, 0xffffffffffffffffffffffffffff)
             _reserve1 := and(
-                shr(mul(reserve1_offset, 8), val),
+                shr(112, val),
                 0xffffffffffffffffffffffffffff
             )
             _blockTimestampLast := and(
-                shr(mul(blockTimestampLast_offset, 8), val),
+                shr(224, val),
                 0xffffffff
             )
         }
@@ -85,7 +82,12 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         }
     }
 
-    function _update(uint balance0, uint balance1, uint112 _reserve0, uint112 _reserve1) private {
+    function _update(
+        uint balance0,
+        uint balance1,
+        uint112 _reserve0,
+        uint112 _reserve1
+    ) private {
         assembly {
             let price0CumulativeLastSlot := price0CumulativeLast.slot
             let price1CumulativeLastSlot := price1CumulativeLast.slot
@@ -93,9 +95,9 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let reserve0Slot := _reserve0.slot
             let reserve1Slot := _reserve1.slot
 
-            let maxUint112 := sub(shl(112, 1), 1) // 2^112 - 1
+            let maxUint112 := sub(shl(112, 1), 1)
 
-            if or(gt(maxUint112, balance0), gt(maxUint112, balance1)) {
+            if or(gt(balance0, maxUint112), gt(balance1, maxUint112)) {
                 mstore(0x00, 0x08c379a0)
                 revert(0x00, 0x20)
             }
@@ -104,14 +106,29 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let blockTimestampLast := sload(blockTimestampLastSlot)
             let timeElapsed := sub(blockTimestamp, blockTimestampLast)
 
-            if and(gt(timeElapsed, 0), and(iszero(iszero(_reserve0)), iszero(iszero(_reserve1)))) {
+            if and(
+                gt(timeElapsed, 0),
+                and(iszero(iszero(_reserve0)), iszero(iszero(_reserve1)))
+            ) {
                 let price0Cumulative := sload(price0CumulativeLastSlot)
-                let price0Increment := div(mul(shl(112, _reserve1), timeElapsed), _reserve0)
-                sstore(price0CumulativeLastSlot, add(price0Cumulative, price0Increment))
+                let price0Increment := div(
+                    mul(shl(112, _reserve1), timeElapsed),
+                    _reserve0
+                )
+                sstore(
+                    price0CumulativeLastSlot,
+                    add(price0Cumulative, price0Increment)
+                )
 
                 let price1Cumulative := sload(price1CumulativeLastSlot)
-                let price1Increment := div(mul(shl(112, _reserve0), timeElapsed), _reserve1)
-                sstore(price1CumulativeLastSlot, add(price1Cumulative, price1Increment))
+                let price1Increment := div(
+                    mul(shl(112, _reserve0), timeElapsed),
+                    _reserve1
+                )
+                sstore(
+                    price1CumulativeLastSlot,
+                    add(price1Cumulative, price1Increment)
+                )
             }
 
             sstore(reserve0Slot, balance0)
@@ -120,28 +137,19 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         }
     }
 
-
     function getBalance(address token) public view returns (uint256 balance) {
-        
-        assembly{
-            let _token := token
-
+        assembly {
             let ptr := mload(0x40)
-            mstore(ptr, 0x70a08231)
-            mstore(add(ptr, 0x20), address())
-            mstore(0x40, add(ptr, 0x40))
+            mstore(ptr, shl(224, 0x70a08231))
+            mstore(add(ptr, 0x04), address())
+            mstore(0x40, add(ptr, 0x24))
 
-            let ok := staticcall(
-                gas(),
-                _token,
-                add(ptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let ok := staticcall(gas(), token, ptr, mload(0x40), 0x00, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
 
             balance := mload(0x00)
@@ -167,23 +175,15 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let _totalSupply := sload(totalSupply.slot)
 
             let fmptr := mload(0x40)
-            mstore(fmptr, 0xf65d5f86)
-            mstore(add(fmptr, 0x20), _reserve0)
-            mstore(add(fmptr, 0x40), _reserve1)
-            mstore(0x40, add(fmptr, 0x60))
+            mstore(fmptr, shl(224, 0xf65d5f86))
+            mstore(add(fmptr, 0x04), _reserve0)
+            mstore(add(fmptr, 0x24), _reserve1)
+            mstore(0x40, add(fmptr, 0x44))
 
-            feeOn := call(
-                gas(),
-                address(),
-                0,
-                add(fmptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            feeOn := call(gas(), address(), 0, fmptr, mload(0x40), 0x00, 0x20)
 
             if iszero(feeOn) {
-                revert(0, 0)
+                leave
             }
 
             switch _totalSupply
@@ -191,28 +191,25 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 liquidity := sub(sqrt(mul(amount0, amount1)), MINIMUM_LIQUIDITY)
 
                 if iszero(gt(liquidity, 0)) {
-                    mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
+                    mstore(
+                        0x00,
+                        0x556e697377617056323a3a494e53554646494349454e54
+                    )
                     revert(0x00, 0x20)
                 }
 
                 let fmptr := mload(0x40)
-                mstore(fmptr, 0x40c10f19)
-                mstore(add(fmptr, 0x20), 0x00)
-                mstore(add(fmptr, 0x40), MINIMUM_LIQUIDITY)
-                mstore(0x40, add(fmptr, 0x60))
+                mstore(fmptr, shl(224, 0x40c10f19))
+                mstore(add(fmptr, 0x04), 0x00)
+                mstore(add(fmptr, 0x24), MINIMUM_LIQUIDITY)
+                mstore(0x40, add(fmptr, 0x44))
 
-                let ok := call(
-                    gas(),
-                    address(),
-                    0,
-                    add(fmptr, 28),
-                    0x40,
-                    0x00,
-                    0x20
-                )
+                let ok := call(gas(), address(), 0, fmptr, 0x40, 0x00, 0x20)
 
                 if iszero(ok) {
-                    revert(0, 0)
+                    let rd := returndatasize()
+                    returndatacopy(0, 0, rd)
+                    revert(0, rd)
                 }
             }
             default {
@@ -222,120 +219,129 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 )
 
                 if iszero(gt(liquidity, 0)) {
-                    mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
+                    mstore(
+                        0x00,
+                        0x556e697377617056323a3a494e53554646494349454e54
+                    )
                     revert(0x00, 0x20)
                 }
-    
+
                 let ptr := mload(0x40)
-                mstore(ptr, 0x40c10f19)
-                mstore(add(ptr, 0x20), to)
-                mstore(add(ptr, 0x40), liquidity)
-                mstore(0x40, add(ptr, 0x60))
+                mstore(ptr, shl(224, 0x40c10f19))
+                mstore(add(ptr, 0x04), to)
+                mstore(add(ptr, 0x24), liquidity)
+                mstore(0x40, add(ptr, 0x44))
 
                 let ok := call(
                     gas(),
                     address(),
                     0,
-                    add(ptr, 28),
+                    ptr,
                     mload(0x40),
                     0x00,
                     0x20
                 )
 
                 if iszero(ok) {
-                    revert(0, 0)
+                    let rd := returndatasize()
+                    returndatacopy(0, 0, rd)
+                    revert(0, rd)
                 }
             }
         }
 
         _update(_balance0, _balance1, _reserve0, _reserve1);
 
-        assembly {
-            if iszero(iszero(feeOn)) {
+        if (feeOn) {
+            assembly {
                 _kLast := mul(_reserve0, _reserve1)
                 sstore(kLast.slot, _kLast)
             }
         }
     }
 
-    function _mintFee(uint112 _reserve0, uint112 _reserve1) private returns (bool feeOn) {
-        
+    function _mintFee(
+        uint112 _reserve0,
+        uint112 _reserve1
+    ) private returns (bool feeOn) {
         assembly {
             let _factory := sload(factory.slot)
             let _kLast := sload(kLast.slot)
 
             let ptr := mload(0x40)
-            mstore(ptr, 0x017e7e58)
-            mstore(0x40, add(ptr, 0x20))
+            mstore(ptr, shl(224, 0x017e7e58))
+            mstore(0x40, add(ptr, 0x04))
 
             let ok := staticcall(
                 gas(),
                 _factory,
                 0,
-                add(ptr, 28),
+                ptr,
                 mload(0x40),
                 0x00,
                 0x20
             )
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
 
             let feeTo := mload(0x00)
 
-            {
-                feeOn := iszero(iszero(feeTo))
+            feeOn := iszero(iszero(feeTo))
 
-                if iszero(feeOn) {
-                    leave
-                }
+            if iszero(feeOn) {
+                leave
+            }
 
-                if iszero(iszero(_kLast)) {
-                    let rootK := sqrt(mul(_reserve0, _reserve1))
-                    let rootKLast := sqrt(_kLast)
+            if iszero(iszero(_kLast)) {
+                let rootK := sqrt(mul(_reserve0, _reserve1))
+                let rootKLast := sqrt(_kLast)
 
-                if iszero(iszero(gt(rootK, rootKLast)) ) {
-                
+                if gt(rootK, rootKLast) {
                     let _totalSupply := sload(totalSupply.slot)
                     let numerator := mul(_totalSupply, sub(rootK, rootKLast))
                     let denominator := add(mul(rootK, 5), rootKLast)
                     let liquidity := div(numerator, denominator)
 
-                    if iszero(iszero(gt(liquidity, 0))) {
-
+                    if gt(liquidity, 0) {
                         let fmptr := mload(0x40)
-                        mstore(fmptr, 0x40c10f19)
-                        mstore(add(fmptr, 0x20), feeTo)
-                        mstore(add(fmptr, 0x40), liquidity)
-                        mstore(0x40, add(fmptr, 0x60))
+                        mstore(fmptr, shl(224, 0x40c10f19))
+                        mstore(add(fmptr, 0x04), feeTo)
+                        mstore(add(fmptr, 0x24), liquidity)
+                        mstore(0x40, add(fmptr, 0x44))
 
                         let ok := call(
                             gas(),
                             address(),
                             0,
-                            add(fmptr, 28),
+                            fmptr,
                             mload(0x40),
                             0x00,
                             0x20
                         )
 
                         if iszero(ok) {
-                            revert(0, 0)
+                            let rd := returndatasize()
+                            returndatacopy(0, 0, rd)
+                            revert(0, rd)
                         }
                     }
-                }   
-
-                if iszero(iszero(_kLast)) {
-                    _kLast := 0
-                    sstore(kLast.slot, _kLast)
                 }
             }
+            _kLast := 0
+            sstore(kLast.slot, _kLast)
         }
     }
 
-    function burn(address to) external lock returns (uint amount0, uint amount1) {
+    function burn(
+        address to
+    ) external lock returns (uint amount0, uint amount1) {
         (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
+
+        bool feeOn;
 
         address _token0 = token0;
         address _token1 = token1;
@@ -346,101 +352,77 @@ contract UniswapV2Pair is UniswapV2ERC20 {
         assembly {
             let _kLast := sload(kLast.slot)
             let _totalSupply := sload(totalSupply.slot)
-            
-            let fmptr := mload(0x40)
-            mstore(fmptr, 0xf65d5f86)
-            mstore(add(fmptr, 0x20), _reserve0)
-            mstore(add(fmptr, 0x40), _reserve1)
-            mstore(0x40, add(fmptr, 0x60))
 
-            let feeOn := call(
-                gas(),
-                address(),
-                0,
-                add(fmptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let fmptr := mload(0x40)
+            mstore(fmptr, shl(224, 0xf65d5f86))
+            mstore(add(fmptr, 0x04), _reserve0)
+            mstore(add(fmptr, 0x24), _reserve1)
+            mstore(0x40, add(fmptr, 0x44))
+
+            feeOn := call(gas(), address(), 0, fmptr, mload(0x40), 0x00, 0x20)
+
+            let ptr := mload(0x40)
+            mstore(ptr, address())
+            mstore(add(ptr, 0x20), balanceOf.slot)
+            let loc := keccak256(ptr, 0x40)
+            let liquidity := sload(loc)
+
+            mstore(0x40, add(ptr, 0x40))
 
             let liquidity := sload(balanceOf.slot)
-            liquidity := and(
-                shr(mul(balanceOf.offset, 8), liquidity),
-                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-            )
-
             let amount0 := div(mul(liquidity, _balance0), _totalSupply)
             let amount1 := div(mul(liquidity, _balance1), _totalSupply)
 
-            if iszero(gt(amount0, 0)) {
-                mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
-                revert(0x00, 0x20)
-            }
-
-            if iszero(gt(amount1, 0)) {
+            if or(lt(amount0, 0), lt(amount1, 0)) {
                 mstore(0x00, 0x556e697377617056323a3a494e53554646494349454e54)
                 revert(0x00, 0x20)
             }
 
             let ptr := mload(0x40)
-            mstore(ptr, 0x6161eb18)
+            mstore(ptr, shl(224, 0x6161eb18))
             mstore(add(ptr, 0x20), address())
             mstore(add(ptr, 0x40), liquidity)
             mstore(0x40, add(ptr, 0x60))
 
-            let ok := call(
-                gas(),
-                address(),
-                0,
-                add(ptr, 28),
-                mload(0x40),
-                0
-            )
+            let ok := call(gas(), address(), 0, ptr, mload(0x40), 0, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
 
             let fmptr := mload(0x40)
-            mstore(fmptr, 0xa9059cbb)
+            mstore(fmptr, shl(224, 0xa9059cbb))
             mstore(add(fmptr, 0x20), to)
             mstore(add(fmptr, 0x40), amount0)
             mstore(0x40, add(fmptr, 0x60))
 
-            let ok := call(
-                gas(),
-                _token0,
-                0,
-                add(fmptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
 
             let fmptr := mload(0x40)
-            mstore(fmptr, 0xa9059cbb)
+            mstore(fmptr, shl(224, 0xa9059cbb))
             mstore(add(fmptr, 0x20), to)
             mstore(add(fmptr, 0x40), amount1)
             mstore(0x40, add(fmptr, 0x60))
 
-            let ok := call(
-                gas(),
-                _token1,
-                0,
-                add(fmptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let ok := call(gas(), _token1, 0, fmptr, mload(0x40), 0x00, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
+        }
+        _update(_balance0, _balance1, _reserve0, _reserve1);
 
+        assembly {
             if iszero(feeOn) {
                 leave
             }
@@ -448,9 +430,105 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             sstore(kLast.slot, _kLast)
         }
     }
-    
-    function skim(address to) external lock {
 
+    function swap(
+        uint amount0Out,
+        uint amount1Out,
+        address to,
+        bytes calldata data
+    ) external lock {
+        (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
+
+        assembly {
+            if iszero(or(gt(amount0Out, 0), gt(amount1Out, 0))) {
+                mstore(0x00, 0x27dc822c)
+                revert(0x00, 0x20)
+            }
+
+            if iszero(
+                and(lt(amount0Out, _reserve0), lt(amount1Out, _reserve1))
+            ) {
+                mstore(0x00, 0x827e7b7f)
+                revert(0x00, 0x20)
+            }
+
+            let _token0 := sload(token0.slot)
+            let _token1 := sload(token1.slot)
+
+            if or(eq(to, token0), eq(to, token1)) {
+                mstore(0x00, 0x222a2ad1)
+                revert(0x00, 0x20)
+            }
+
+            if gt(amount0Out, 0) {
+                let fmptr := mload(0x40)
+                mstore(fmptr, shl(224, 0xa9059cbb))
+                mstore(add(fmptr, 0x04),  to)
+                mstore(add(fmptr, 0x24), amount0Out)
+                mstore(0x40, add(fmptr, 0x44))
+
+                let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
+
+                if iszero(ok) {
+                    let rd := returndatasize()
+                    returndatacopy(0, 0, rd)
+                    revert(0, rd)
+                }
+            }
+
+            if gt(amount1Out, 0) {
+                let fmptr := mload(0x40)
+                mstore(fmptr, shl(224, 0xa9059cbb))
+                mstore(add(fmptr, 0x04), shl(96, to))
+                mstore(add(fmptr, 0x24), amount1Out)
+                mstore(0x40, add(fmptr, 0x44))
+
+                let ok := call(gas(), _token1, 0, fmptr, mload(0x40), 0x00, 0x20)
+
+                if iszero(ok) {
+                    let rd := returndatasize()
+                    returndatacopy(0, 0, rd)
+                    revert(0, rd)
+                }
+            }
+        }
+         if (data.length > 0) IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data);
+        uint balance0 = getBalance(token0);
+        uint balance1 = getBalance(token1);
+
+        assembly {
+            let amount0In
+            let amount1In
+
+            if gt(balance0, sub(_reserve0, amount0Out)) {
+                amount0In := sub(balance0, sub(_reserve0 - amount0Out))
+            } 
+
+            if gt(balance1, sub(_reserve1, amount1Out)) {
+                amount1In := sub(balance1, sub(_reserve1 - amount1Out))
+            }
+            
+            if or(gt(amount0In, 0), gt(amount1In, 0)) {
+                mstore(0x00, 0x6cfcc332)
+                revert(0x00, 0x20)
+            }
+
+            let balance0Adjusted := sub(mul(balance0, 1000), mul(amount0In, 3))
+            let balance1Adjusted := sub(mul(balance1, 1000), mul(amount1In, 3))
+
+            let product := mul(balance0Adjusted, balance1Adjusted)
+            let k := mul(mul(_reserve0, _reserve1), 1000000)
+
+            if lt(product, k) {
+                mstore(0x00, 0xa932492f)
+                revert(0x00, 0x20)
+            }
+        }
+
+        _update(getBalance(token0), getBalance(token1), _reserve0, _reserve1);
+    }
+
+    function skim(address to) external lock {
         (uint112 _reserve0, uint112 _reserve1, ) = getReserves();
         address _token0 = token0;
         address _token1 = token1;
@@ -463,45 +541,32 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let amount1 := sub(_balance1, _reserve1)
 
             let fmptr := mload(0x40)
-            mstore(fmptr, 0xa9059cbb)
-            mstore(add(fmptr, 0x20), to)
-            mstore(add(fmptr, 0x40), amount0)
-            mstore(0x40, add(fmptr, 0x60))
+            mstore(fmptr, shl(224, 0xa9059cbb))
+            mstore(add(fmptr, 0x04), shl(96, to))
+            mstore(add(fmptr, 0x24), amount0)
+            mstore(0x40, add(fmptr, 0x56))
 
-            let ok := call(
-                gas(),
-                _token0,
-                0,
-                add(fmptr, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
 
             let fmptr1 := mload(0x40)
-            mstore(fmptr1, 0xa9059cbb)
-            mstore(add(fmptr1, 0x20), to)
-            mstore(add(fmptr1, 0x40), amount1)
-            mstore(0x40, add(fmptr1, 0x60))
+            mstore(fmptr1, shl(224, 0xa9059cbb))
+            mstore(add(fmptr1, 0x04), shl(96, to))
+            mstore(add(fmptr1, 0x24), amount1)
+            mstore(0x40, add(fmptr1, 0x56))
 
-            let ok := call(
-                gas(),
-                _token1,
-                0,
-                add(fmptr1, 28),
-                mload(0x40),
-                0x00,
-                0x20
-            )
+            let ok := call(gas(), _token1, 0, fmptr1, mload(0x40), 0x00, 0x20)
 
             if iszero(ok) {
-                revert(0, 0)
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
             }
         }
     }
-}
 }
