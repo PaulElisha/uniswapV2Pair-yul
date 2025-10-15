@@ -92,8 +92,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let price0CumulativeLastSlot := price0CumulativeLast.slot
             let price1CumulativeLastSlot := price1CumulativeLast.slot
             let blockTimestampLastSlot := blockTimestampLast.slot
-            let reserve0Slot := _reserve0.slot
-            let reserve1Slot := _reserve1.slot
+            let reserve0Slot := reserve0.slot
+            let reserve1Slot := reserve1.slot
 
             let maxUint112 := sub(shl(112, 1), 1)
 
@@ -102,7 +102,7 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 revert(0x00, 0x20)
             }
 
-            let blockTimestamp := mod(timestamp(), exp(2, 32))
+            let blockTimestamp := mod(timestamp(), 4294967296)
             let blockTimestampLast := sload(blockTimestampLastSlot)
             let timeElapsed := sub(blockTimestamp, blockTimestampLast)
 
@@ -142,9 +142,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             let ptr := mload(0x40)
             mstore(ptr, shl(224, 0x70a08231))
             mstore(add(ptr, 0x04), address())
-            mstore(0x40, add(ptr, 0x24))
 
-            let ok := staticcall(gas(), token, ptr, mload(0x40), 0x00, 0x20)
+            let ok := staticcall(gas(), token, ptr, 0x24, 0x00, 0x00)
 
             if iszero(ok) {
                 let rd := returndatasize()
@@ -178,9 +177,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             mstore(fmptr, shl(224, 0xf65d5f86))
             mstore(add(fmptr, 0x04), _reserve0)
             mstore(add(fmptr, 0x24), _reserve1)
-            mstore(0x40, add(fmptr, 0x44))
 
-            feeOn := call(gas(), address(), 0, fmptr, mload(0x40), 0x00, 0x20)
+            feeOn := call(gas(), address(), 0, fmptr, 0x44, 0x00, 0x20)
 
             if iszero(feeOn) {
                 leave
@@ -202,9 +200,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 mstore(fmptr, shl(224, 0x40c10f19))
                 mstore(add(fmptr, 0x04), 0x00)
                 mstore(add(fmptr, 0x24), MINIMUM_LIQUIDITY)
-                mstore(0x40, add(fmptr, 0x44))
 
-                let ok := call(gas(), address(), 0, fmptr, 0x40, 0x00, 0x20)
+                let ok := call(gas(), address(), 0, fmptr, 0x44, 0x00, 0x20)
 
                 if iszero(ok) {
                     let rd := returndatasize()
@@ -230,7 +227,6 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 mstore(ptr, shl(224, 0x40c10f19))
                 mstore(add(ptr, 0x04), to)
                 mstore(add(ptr, 0x24), liquidity)
-                mstore(0x40, add(ptr, 0x44))
 
                 let ok := call(
                     gas(),
@@ -270,14 +266,13 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
             let ptr := mload(0x40)
             mstore(ptr, shl(224, 0x017e7e58))
-            mstore(0x40, add(ptr, 0x04))
 
             let ok := staticcall(
                 gas(),
                 _factory,
                 0,
                 ptr,
-                mload(0x40),
+                0x04,
                 0x00,
                 0x20
             )
@@ -311,14 +306,13 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                         mstore(fmptr, shl(224, 0x40c10f19))
                         mstore(add(fmptr, 0x04), feeTo)
                         mstore(add(fmptr, 0x24), liquidity)
-                        mstore(0x40, add(fmptr, 0x44))
 
                         let ok := call(
                             gas(),
                             address(),
                             0,
                             fmptr,
-                            mload(0x40),
+                            0x44,
                             0x00,
                             0x20
                         )
@@ -357,9 +351,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             mstore(fmptr, shl(224, 0xf65d5f86))
             mstore(add(fmptr, 0x04), _reserve0)
             mstore(add(fmptr, 0x24), _reserve1)
-            mstore(0x40, add(fmptr, 0x44))
 
-            feeOn := call(gas(), address(), 0, fmptr, mload(0x40), 0x00, 0x20)
+            feeOn := call(gas(), address(), 0, fmptr, 0x44, 0x00, 0x20)
 
             let ptr := mload(0x40)
             mstore(ptr, address())
@@ -382,23 +375,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             mstore(ptr, shl(224, 0x6161eb18))
             mstore(add(ptr, 0x20), address())
             mstore(add(ptr, 0x40), liquidity)
-            mstore(0x40, add(ptr, 0x60))
 
-            let ok := call(gas(), address(), 0, ptr, mload(0x40), 0, 0x20)
-
-            if iszero(ok) {
-                let rd := returndatasize()
-                returndatacopy(0, 0, rd)
-                revert(0, rd)
-            }
-
-            let fmptr := mload(0x40)
-            mstore(fmptr, shl(224, 0xa9059cbb))
-            mstore(add(fmptr, 0x20), to)
-            mstore(add(fmptr, 0x40), amount0)
-            mstore(0x40, add(fmptr, 0x60))
-
-            let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
+            let ok := call(gas(), address(), 0, ptr, 0x44, 0, 0x20)
 
             if iszero(ok) {
                 let rd := returndatasize()
@@ -408,11 +386,23 @@ contract UniswapV2Pair is UniswapV2ERC20 {
 
             let fmptr := mload(0x40)
             mstore(fmptr, shl(224, 0xa9059cbb))
-            mstore(add(fmptr, 0x20), to)
-            mstore(add(fmptr, 0x40), amount1)
-            mstore(0x40, add(fmptr, 0x60))
+            mstore(add(fmptr, 0x04), to)
+            mstore(add(fmptr, 0x24), amount0)
 
-            let ok := call(gas(), _token1, 0, fmptr, mload(0x40), 0x00, 0x20)
+            let ok := call(gas(), _token0, 0, fmptr, 0x44, 0x00, 0x20)
+
+            if iszero(ok) {
+                let rd := returndatasize()
+                returndatacopy(0, 0, rd)
+                revert(0, rd)
+            }
+
+            let fmptr := mload(0x40)
+            mstore(fmptr, shl(224, 0xa9059cbb))
+            mstore(add(fmptr, 0x04), to)
+            mstore(add(fmptr, 0x24), amount1)
+
+            let ok := call(gas(), _token1, 0, fmptr, 0x44, 0x00, 0x20)
 
             if iszero(ok) {
                 let rd := returndatasize()
@@ -465,9 +455,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 mstore(fmptr, shl(224, 0xa9059cbb))
                 mstore(add(fmptr, 0x04),  to)
                 mstore(add(fmptr, 0x24), amount0Out)
-                mstore(0x40, add(fmptr, 0x44))
 
-                let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
+                let ok := call(gas(), _token0, 0, fmptr, 0x44, 0x00, 0x20)
 
                 if iszero(ok) {
                     let rd := returndatasize()
@@ -481,9 +470,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
                 mstore(fmptr, shl(224, 0xa9059cbb))
                 mstore(add(fmptr, 0x04), shl(96, to))
                 mstore(add(fmptr, 0x24), amount1Out)
-                mstore(0x40, add(fmptr, 0x44))
 
-                let ok := call(gas(), _token1, 0, fmptr, mload(0x40), 0x00, 0x20)
+                let ok := call(gas(), _token1, 0, fmptr, 0x44, 0x00, 0x20)
 
                 if iszero(ok) {
                     let rd := returndatasize()
@@ -544,9 +532,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             mstore(fmptr, shl(224, 0xa9059cbb))
             mstore(add(fmptr, 0x04), shl(96, to))
             mstore(add(fmptr, 0x24), amount0)
-            mstore(0x40, add(fmptr, 0x56))
 
-            let ok := call(gas(), _token0, 0, fmptr, mload(0x40), 0x00, 0x20)
+            let ok := call(gas(), _token0, 0, fmptr, 0x44, 0x00, 0x20)
 
             if iszero(ok) {
                 let rd := returndatasize()
@@ -558,9 +545,8 @@ contract UniswapV2Pair is UniswapV2ERC20 {
             mstore(fmptr1, shl(224, 0xa9059cbb))
             mstore(add(fmptr1, 0x04), shl(96, to))
             mstore(add(fmptr1, 0x24), amount1)
-            mstore(0x40, add(fmptr1, 0x56))
 
-            let ok := call(gas(), _token1, 0, fmptr1, mload(0x40), 0x00, 0x20)
+            let ok := call(gas(), _token1, 0, fmptr1, 0x44, 0x00, 0x20)
 
             if iszero(ok) {
                 let rd := returndatasize()
